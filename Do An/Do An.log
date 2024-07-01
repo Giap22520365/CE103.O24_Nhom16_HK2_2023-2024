@@ -1,0 +1,12 @@
+# Writing all output to: C:\UIT Courses\CE103.024 - Microprocessors and Microcontrollers\Reports and Homework turn in\Do An\Do An.log
+set pad_wire_necking on
+bus diagonal
+fanout 5
+route 50
+clean 2
+route 50 16
+clean 2
+filter 5
+recorner diagonal
+status_file
+

@@ -1,0 +1,272 @@
+ORG 00H
+LJMP DEMO
+ORG 0013H
+LJMP RT_TO_KB
+
+DEMO:
+MOV R1, #40
+MOV R3, #4
+MOV R5, #36
+MOV P1, #0101B		; cho phép cột thứ 3 điều khiển chế độ
+MOV IE, #10000100B	; cho phép ngắt ngoài INT1
+SETB 07H
+
+MOV A, R1		
+MOV R0, A		; R0 = RED1
+
+MOV A, R5
+MOV R7, A		; R7 = GREEN2
+
+LJMP RED1_GREEN2
+
+MAIN:
+MOV R0, #0
+MOV R1, #100		; Tạo giá trị khởi đầu cho R0 -> R7
+MOV R2, #100
+MOV R3, #100
+MOV R4, #100
+MOV R5, #100
+MOV R7, #0
+MOV IE, #0
+MOV 20H, #0
+
+START:			; Nhãn bắt đầu nhập vào số
+JB 07H, OUTPUT		; if 07H = 1, chạy hàm OUTPUT
+MOV P0, #0		; tắt 6 đèn
+MOV P1, #0		; quét 4 hàng của keypad
+MOV A, P3		; lưu số được nhập vào A
+ANL A, #0FH		; A = A && 1111
+CJNE A, #0FH, DEBOUNCE	; if A != 1111, gọi hàm DEBOUNCE
+SJMP START		; lặp lại hàm START
+
+DEBOUNCE:		; Nhãn cho hàm chống đối
+CALL DELAY		; gọi hàm tạo trễ 0.2s
+MOV A, P3		; lưu số được nhập vào A
+ANL A, #0FH		; A = A && 1111
+CJNE A, #0FH, PRESSED	; if A != 1111, gọi hàm PRESSED
+SJMP DEBOUNCE		; lặp lại hàm DEBOUNCE
+
+PRESSED:		; Nhãn cho hàm nhấp nút
+CALL DELAY		; gọi hàm tạo trễ 0.2s
+MOV A, P3		; lưu số được nhập vào A
+ANL A, #0FH		; A = A && 1111
+CJNE A, #0FH, COLU_CHECK	; if A != 1111, gọi hàm COLU_CHECK
+SJMP PRESSED		; lặp lại hàm PRESSED
+
+COLU_CHECK:		; Nhãn cho hàm kiểm tra cột
+MOV P1, #0FEH		; P1 = 11111110b -> kiểm tra cột 1
+MOV A, P3		; lưu số được nhập vào A
+ANL A, #0FH		; A = A && 1111
+CJNE A, #0FH, SCAN_C0	; lặp lại hàm SCAN_C0
+
+MOV P1, #0FDH		; P1 = 11111101b -> kiểm tra cột 2
+MOV A, P3
+ANL A, #0FH
+CJNE A, #0FH, SCAN_C1
+
+MOV P1, #0FBH		; P1 = 11111011b -> kiểm tra cột 3
+MOV A, P3
+ANL A, #0FH
+CJNE A, #0FH, SCAN_C2
+
+SCAN_C0:		; Nhãn cho hàm quét cột 1
+MOV DPTR, #MACOT0	; DPTR = ['1','4','7','*']
+LCALL SCAN		; gọi hàm SCAN
+LJMP START		; nhảy tới hàm START
+
+SCAN_C1:		; Nhãn cho hàm quét cột 2
+MOV DPTR, #MACOT1	; DPTR = ['2','5','8','0']
+LCALL SCAN
+LJMP START
+
+SCAN_C2:		; Nhãn cho hàm quét cột 3
+MOV DPTR, #MACOT2	; DPTR = ['3','6','9','#']
+LCALL SCAN
+LJMP START
+
+SCAN:			; Nhãn cho hàm quét
+	RRC A		; di chuyển các bit sang phải, bit thứ 0 được đưa vào Carry
+	JNC MATCH	; if Carry == 0, goto MATCH
+	INC DPTR	; DPTR[index++]
+	SJMP SCAN	; lặp lại hàm SCAN
+	MATCH:		; Nhãn cho hàm MATCH
+		MOV A, #0	; A = 0
+		MOVC A, @A+DPTR	; A = DPTR[index] -> A = phần tử của DPTR có index = số lần di chuyển các bit của A sang phải
+		LCALL INPUT	; gọi hàm INPUT
+RET
+
+OUTPUT:			; Nhãn cho hàm xuất
+	MOV P0, #0FFH
+	MOV P1, #0101B		; cho phép cột thứ 3 điều khiển chế độ
+	MOV IE, #10000100B	; cho phép ngắt ngoài INT1
+	MOV A, R1		; A = RED1
+	SUBB A, R3		; A = RED1 - YELLOW1
+	MOV R5, A		; R5 = GREEN2 = RED1 - YELLOW1
+
+	MOV A, R1
+	MOV R0, A		; R0 = RED1
+	MOV A, R5
+	MOV R7, A		; R7 = GREEN2
+
+;R1 = RED1 -> R1 là thời gian đèn đỏ của DGTx
+;R3 = YELLOW1 -> R3 là thời gian đèn vàng của DGTx
+;R5 = GREEN2 -> R5 là thời gian đèn xanh của DGTx
+
+RED1_GREEN2:			; Nhãn cho đèn đỏ DGT1 - đèn xanh DGT2
+	JB 05H, RES
+	MOV P0, #10000100B	; xuất đèn đỏ cho DGT1, đèn xanh cho DGT2
+	CALL LED_DIS		; hiển thị thời gian cho 2 đèn trên đèn led 7 đoạn
+
+	DEC R0			; R0--
+	DJNZ R7, RED1_GREEN2	; R7--, if R7 != 0, lặp lại hàm RED1_GREEN2
+	MOV A, R3
+	MOV R7, A		; R7 = YELLOW1
+
+RED1_YELLOW2:			; Nhãn cho đèn đỏ DGT1 - đèn vàng DGT2
+	JB 05H, RES
+	MOV P0, #01000100B	; xuất đèn đỏ cho DGT1, đèn vàng cho DGT2
+	CALL LED_DIS
+	
+	DEC R7			; R7--
+	DJNZ R0, RED1_YELLOW2	; R0--, if R0 != 0, lặp lại hàm RED1_YELLOW2
+
+	MOV A, R5
+	MOV R0, A		; R0 = GREEN2
+	MOV A, R1
+	MOV R7, A		; R7 = RED1
+
+GREEN1_RED2:
+	JB 05H, RES
+	MOV P0, #00110000B
+	CALL LED_DIS
+
+	DEC R7
+	DJNZ R0, GREEN1_RED2
+	MOV A, R3
+	MOV R0, A		; R0 = YELLOW1
+
+YELLOW1_RED2:
+	JB 05H, RES
+	MOV P0, #00101000B
+	CALL LED_DIS
+
+	DEC R7
+	DJNZ R0, YELLOW1_RED2
+
+	MOV A, R1
+	MOV R0, A		; R0 = RED1
+	NOV A, R5
+	MOV R7, A		; R7 = GREEN2
+
+	LJMP RED1_GREEN2	; quay lại hàm RED1_GREEN2
+RES:
+	LJMP MAIN
+
+
+RT_TO_KB:
+	SETB 06H
+	SETB 05H
+	CLR 07H
+RETI
+	
+
+INPUT:				; Nhãn cho hàm lưu số đã nhập vào các thanh ghi
+	JNB 06H, CONFIRM_ALL
+		LJMP FIN_INPUT
+	CONFIRM_ALL:
+	CJNE A, #'*', CONFIRM	; if A != '*', gọi hàm CONFIRM
+	SETB 07H		; 07H = 1
+	JMP FIN_INPUT		; nhảy tới hàm FIN_INPUT
+	CONFIRM:
+		CJNE A, #'#', RED_FIRDIG
+		INC 20H
+		MOV R0, #0
+		MOV R7, #0
+		CALL LED_DIS
+		JMP FIN_INPUT
+	RED_FIRDIG:		; Nhãn nhập vào số hàng chục của RED1
+		ANL A, #0FH	; A = A && 1111b -> vì các số nhập vào là ký tự ASCII có 4 MSB là 0011, ta chỉ lấy 4 LSB
+		CJNE R1, #100, RED_SECDIG
+		MOV P0, #11000100B
+		MOV R1, A	; R1 = số hàng chục của RED1
+		MOV R0, A	; R0 = R1
+		MOV R7, A	; R7 = R1
+		CALL LED_DIS
+		JMP FIN_INPUT	; nhảy tới nhãn hoàn tất nhập
+	RED_SECDIG:		; Nhãn nhập vào số hàng đơn vị của RED1
+		MOV R7, 20H
+		CJNE R7, #0, YELLOW_DIG
+		MOV P0, #11000100B
+		MOV R2, A	; R2 = số hàng đơn vị của RED1
+		MOV A, R1	; A = số hàng chục của RED1
+		MOV B, #10	; B = 10
+		MUL AB		; A = A * 10
+		ADD A, R2	; A = A + số hàng đơn vị của RED1 = RED1
+		MOV R1, A	; R1 = RED1
+		MOV R0, A
+		MOV R7, A
+		CALL LED_DIS
+		JMP FIN_INPUT	; nhảy tới nhãn hoàn tất nhập
+	YELLOW_DIG:		; Nhãn cho hàm nhập số của YELLOW1
+		CJNE R7, #1, FIN_INPUT
+		MOV P0, #10101000B
+		MOV R3, A	; R3 = YELLOW1
+		MOV R0, A	; R0 = YELLOW1
+		MOV R7, A
+		CALL LED_DIS
+	FIN_INPUT:		; Nhãn hoàn tất nhập
+		CLR 06H
+RET
+
+; Để tạo độ trễ 1s với fXTAL = 12MHz, ta nạp giá trị 50000 * 20 = 1000000 (micro second) = 1(s)
+LED_DIS:			; Nhãn hiển thị đèn led 7 đoạn với độ trễ 1s
+	MOV 30H, #20		; thanh ghi 30H = 20
+	REPEAT:			; Nhãn cho vòng lặp
+		CALL DELAY	; gọi hàm tạo trễ
+	DJNZ 30H, REPEAT	; 30H--, if 30H != 0, nhảy tới nhãn REPEAT
+RET
+
+DELAY:				; Nhãn cho hàm tạo độ trễ
+	DELAY1:			; Nhãn cho hàm khởi động Timer 0
+		MOV TL0, #LOW(15536)	; TL0 = 8 LSB của 15536
+		MOV TH0, #HIGH(15536)	; TH0 = 8 MSB của 15536
+		MOV TMOD, #01	; chế độ của Timer 0 là chế độ 16-bit
+		SETB TR0	; khởi động Timer 0
+	DELAY2:			; Nhãn hiển thị trên đèn led 7 đoạn
+		MOV A, R0	; A = R0
+		MOV B, #10	; B = 10
+		DIV AB		; Quotient A = A / 10 -> số hàng chục, Remainder B = A % 10 -> số hàng đơn vị
+		MOV P2, A	; hiển thị số hàng chục
+		SETB P2.4	; bật tắt đèn led DGT1 cho hàng chục -> quét led 7 đoạn
+		CLR P2.4
+
+		MOV A, B	; A = Remainder B
+		MOV P2, A	; hiển thị số hàng đơn vị
+
+		SETB P2.5	; bật tắt đèn led DGT1 cho hàng đơn vị
+		CLR P2.5
+
+		MOV A, R7	; tương tự với R7
+		MOV B, #10
+		DIV AB
+		MOV P2, A
+
+		SETB P2.6
+		CLR P2.6
+
+		MOV A, B
+		MOV P2, A
+
+		SETB P2.7
+		CLR P2.7
+
+	JNB TF0, DELAY2		; if TF0 chưa tràn, lặp lại DELAY2
+	CLR TR0			; tắt Timer 0
+	CLR TF0			; xóa cờ tràn TF0
+RET
+
+ORG 300H			; Nhãn chứa dữ liệu 3 cột
+MACOT0: DB '1','4','7','*'
+MACOT1: DB '2','5','8','0'
+MACOT2: DB '3','6','9','#'
+END
